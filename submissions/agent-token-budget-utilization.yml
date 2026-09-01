@@ -18,21 +18,7 @@ applied_definition: |
   output against task requirements normally. The interesting case is when TBU
   approaches 1.0. That means the agent was killed by budget enforcement, and
   the output is whatever partial state existed at the moment the plug was
-  pulled. You can't validate it in the ISO 9000:2015 sense—objective evidence
-  that requirements for intended use have been fulfilled—because the reasoning
-  process that would produce such evidence was terminated externally. (The
-  NIST AI RMF uses the same definition of validation, for what it's worth.)
-
-  This is a reliability problem under the AI RMF's Valid and Reliable
-  characteristic. Reliability means performing as required under given
-  conditions (ISO/IEC TS 5723:2022). An agent that hit its token ceiling
-  didn't meet those conditions. Full stop. And this isn't just correlational—
-  test-time compute scaling research (Snell et al. 2024) shows output quality
-  degrades as a direct function of inference budget.
-
-  Reported as a histogram across invocations. Look at the percentiles—P95
-  TBU above 0.9 means your agents are routinely hitting budget walls instead
-  of finishing their work, and that should concern you.
+  pulled.
 submitter_organizations:
   - Independent Contributor
 contact_email: 5340827+elang2@users.noreply.github.com
@@ -109,45 +95,18 @@ modality:
 # --- Section 3: Provenance, tooling, and requirements ---
 references:
   - >-
-    National Institute of Standards and Technology (2023). "Artificial
-    Intelligence Risk Management Framework (AI RMF 1.0)." NIST AI 100-1.
-    https://doi.org/10.6028/NIST.AI.100-1
-  - >-
-    Snell, C., Lee, J., Xu, K., and Kumar, A. (2024). "Scaling LLM Test-Time
-    Compute Optimally can be More Effective than Scaling Model Parameters."
-    arXiv:2408.03314. https://arxiv.org/abs/2408.03314
-  - >-
     Gershman, S.J., Horvitz, E.J., and Tenenbaum, J.B. (2015). "Computational
     Rationality: A Converging Paradigm for Intelligence in Brains, Minds, and
     Machines." Science, 349(6245), 273-278.
     https://doi.org/10.1126/science.aac6076
-  - >-
-    ISO/IEC TS 5723:2022. "Trustworthiness — Vocabulary." International
-    Organization for Standardization.
-  - >-
-    OpenTelemetry Semantic Conventions for Generative AI (2025). Agent Spans
-    specification defining invoke_agent span semantics.
-    https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-agent-spans/
-  - >-
-    OpenTelemetry GenAI Semantic Conventions (2026). Proposed Budget Governance
-    Attributes. Pull Request #439, open-telemetry/semantic-conventions-genai
-    (under review). Defines gen_ai.agent.token_budget.limit,
-    gen_ai.agent.token_budget.consumed, and
-    gen_ai.invoke_agent.token_budget.utilization histogram metric.
-    https://github.com/open-telemetry/semantic-conventions-genai/pull/439
 implementation_resources:
   - >-
-    https://github.com/open-telemetry/semantic-conventions-genai/pull/439 —
-    OpenTelemetry semantic convention (under review) defining the token budget
-    attributes and utilization histogram metric with reference scenarios.
-  - >-
     https://github.com/microsoft/autogen — AutoGen multi-agent framework
-    implementing TokenUsageTermination condition for per-invocation token
-    budget enforcement with termination reason tracking.
-  - >-
-    https://github.com/open-telemetry/opentelemetry-python-contrib — Python
-    OpenTelemetry instrumentation libraries providing GenAI span collection
-    infrastructure.
+    with TokenUsageTermination condition that enforces per-invocation caps
+    on total/prompt/completion tokens (max_total_token, max_prompt_token,
+    max_completion_token). On trip, emits a StopMessage whose content
+    carries the total/prompt/completion counts, from which TBU can be
+    computed against the configured cap.
 common_variants:
   - Cost Budget Utilization (monetary spend / cost cap, in currency units)
   - Iteration Budget Utilization (iterations consumed / iteration limit)
