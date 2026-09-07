@@ -1,0 +1,122 @@
+# NIST AI Metrology submission — revised 2026-09-07 (post multi-agent review)
+# Destination: submissions/audit-trail-tamper-detection-rate.yml
+# in fork elang2/didactic-rotary-phone (= usnistgov/ai-metrology-submissions)
+# Schema: 1.0
+
+schema_version: "1.0"
+
+# --- Section 1: Identification and attribution ---
+name: Audit-Trail Tamper-Detection Rate for AI Agent Tool Invocations
+
+applied_definition: |
+  For $M_c$ tampering attempts $\{a_1, ..., a_{M_c}\}$ in attack class
+  $c \in \{\text{edit, delete, reorder, equivocation-fork}\}$ applied
+  to a stream of audit records produced by an audit-trail system $A$,
+
+  $$ R_{\text{detect}}(A, c) = \frac{1}{M_c} \sum_{i=1}^{M_c} \mathbb{1}\left[V(A, a_i) = \text{detected}\right] $$
+
+  where $V(A, a_i)$ is the verifier's output on the tampered chain. The
+  four attack classes are: edit (a single field mutation in a record),
+  delete (removal of one record from the chain), reorder (swap of two
+  adjacent records without content mutation), and equivocation-fork
+  (signing a second suffix from an already-signed prefix so that two
+  divergent chains share a common committed head). The false-positive
+  companion rate $R_{\text{FP}}(A)$ is the fraction of untampered chains
+  the verifier flags as tampered. $R_{\text{detect}}$ is reported per
+  attack class $c$ and per chain-length window (measured in records,
+  with $M_c \geq 30$ recommended per class per window); $R_{\text{FP}}$
+  is reported per chain-length window only, since it is measured on
+  untampered chains and has no attack class. Recommended confidence
+  interval: Wilson score at $\alpha = 0.05$; cluster-adjusted Wilson
+  where attack instances within a class share a generator.
+
+submitter_organizations:
+  - Elankumaran Srinivasan (independent researcher, ORCID 0009-0001-2643-0389)
+
+contact_email: 5340827+elang2@users.noreply.github.com
+
+# --- Section 2: Context and limitations ---
+ai_rmf_characteristics:
+  - Accountable & Transparent
+  - Secure & Resilient
+  - Valid & Reliable
+
+primary_tevv_application:
+  - Privacy & Security Evaluation
+
+ai_lifecycle_stages:
+  - Deploy
+  - Operate & Monitor
+
+object_of_measurement:
+  - system
+  - agent
+
+model_specificity: model agnostic
+
+domain_specificity: domain agnostic
+
+usage_details: |
+  Applied by generating a controlled workload, applying a curated set of
+  tampering attacks (edit, delete, reorder, equivocation-fork), and
+  running the verifier against the tampered chain.
+
+  Supports direct comparison across audit-trail architectures at fixed
+  attack corpus: hash-chained records authenticated by Ed25519 or by
+  HMAC-SHA256, with or without periodic on-chain anchoring. Comparable
+  axes are detection rate, false-positive rate, per-event verifier
+  latency, and per-event storage.
+
+known_failure_modes: |
+  Detection rate against an incomplete attack corpus overestimates
+  real-world resilience. Attack corpora should include
+  semantic-equivalence tamperings (values that produce identical
+  canonical form across SDKs, per the companion Cross-SDK Wire-Level
+  Divergence Rate metric) as well as byte-level tamperings.
+
+  Does not measure resistance to agent-internal log fabrication, which
+  is a distinct threat model addressed by external audit gateways
+  rather than by the audit-trail system itself.
+
+modality:
+  - text
+  - structured data
+
+# --- Section 3: Provenance, tooling, and requirements ---
+references:
+  - >-
+    Bindschaedler, L., Botha, Q., and Siebenbrunner, C. (2026). Agent
+    Flight Recorder: Tamper-Evident Audit Trails with On-Chain Anchoring
+    for Long-Horizon Tool-Using Agents.
+    https://binds.ch/papers/flightrecorder2026.pdf
+  - >-
+    Vijayakumar, V., et al. (2026). TRACE: Tamper-Resistant Accountability
+    and Cryptographic Evidence for Multi-Agent AI Systems. IEEE
+    BigDataSecurity 2026.
+    https://ieeexplore.ieee.org/abstract/document/11638142/
+  - >-
+    Srinivasan, E. (2026). Tamper-Evident Audit Trails for AI Agent Tool
+    Invocations: Design Pitfalls, Cross-Language Conformance, and a
+    Reference Implementation. Zenodo.
+    https://doi.org/10.5281/zenodo.22070036
+
+implementation_resources:
+  - >-
+    mcp-audit-gateway (Ed25519 gateway + HMAC-SHA256 wrap modes):
+    https://github.com/elang2/mcp-audit-gateway
+  - >-
+    Cross-language conformance vectors (JS + Python parity, 46 cases):
+    https://github.com/elang2/mcp-audit-gateway/tree/main/test/vectors
+
+related_metrics:
+  - Verifier per-event latency
+  - Bytes-per-event storage overhead
+  - Anchoring cost per 100K events
+  - Cross-SDK Wire-Level Divergence Rate (companion; supplies the semantic-equivalence tampering class)
+
+computational_requirements: >-
+  Verifier: single-core CPU sufficient for chain length under 1M events.
+  Signing/MAC throughput bounded by the underlying authentication
+  primitive (Ed25519 or HMAC-SHA256). No GPU required.
+
+usage_rights: MIT
