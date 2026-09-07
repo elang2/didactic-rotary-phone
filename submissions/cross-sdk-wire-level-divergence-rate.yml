@@ -1,0 +1,96 @@
+# NIST AI Metrology submission — revised 2026-09-07 (post multi-agent review)
+# Destination: submissions/cross-sdk-wire-level-divergence-rate.yml
+# in fork elang2/didactic-rotary-phone (= usnistgov/ai-metrology-submissions)
+# Schema: 1.0
+
+schema_version: "1.0"
+
+# --- Section 1: Identification and attribution ---
+name: Cross-SDK Wire-Level Divergence Rate for AI Agent Tool-Calling Protocols
+
+applied_definition: |
+  The fraction of standardised test cases on which independent SDK
+  implementations of the same agent-tool-calling wire specification produce
+  byte-inequivalent output.
+
+  For $N$ test cases $\{t_1, ..., t_N\}$ applied to $K$ SDK implementations
+  $\{S_1, ..., S_K\}$,
+
+  $$ D = \frac{1}{N} \sum_{i=1}^{N} \mathbb{1}\left[\exists\, S_j, S_k\ :\ S_j(t_i) \neq S_k(t_i)\right] $$
+
+  where $S_j(t_i)$ is the byte-string output of SDK $S_j$ on case $t_i$.
+  A test case is a single JSON tool-call payload; a test suite is an
+  ordered set of such payloads with a stable identifier (git tag or
+  SHA-256 of the case set). Reported per protocol-schema version and
+  per test-suite identifier.
+
+submitter_organizations:
+  - Elankumaran Srinivasan (independent researcher, ORCID 0009-0001-2643-0389)
+
+contact_email: 5340827+elang2@users.noreply.github.com
+
+# --- Section 2: Context and limitations ---
+ai_rmf_characteristics:
+  - Accountable & Transparent
+  - Valid & Reliable
+  - Secure & Resilient
+
+primary_tevv_application:
+  - Privacy & Security Evaluation
+
+ai_lifecycle_stages:
+  - Build
+  - Deploy
+  - Operate & Monitor
+
+object_of_measurement:
+  - system
+
+model_specificity: model agnostic
+
+domain_specificity: domain agnostic
+
+usage_details: |
+  Applied by running a standard test suite across each available SDK
+  implementation and comparing the pairwise byte outputs.
+
+  Concrete application: the Model Context Protocol (MCP) has ten
+  first-party SDKs. A 40-test differential harness applied to these SDKs
+  found 26 divergences (D = 0.65). Recommended confidence interval for
+  reported rates: Wilson score at $\alpha = 0.05$; cluster-adjusted
+  Wilson where test cases share a generator (input schema, tokenizer,
+  or fuzz seed).
+
+known_failure_modes: |
+  The metric compares raw bytes; a divergence rate of 1 on raw bytes can be
+  0 after canonicalisation. Always report the canonicalisation scheme (or
+  its absence) alongside the rate. The rate is also sensitive to
+  test-suite completeness: a suite that omits numeric-representation edge
+  points reports a lower rate than a suite that includes them.
+
+modality:
+  - text
+  - structured data
+
+# --- Section 3: Provenance, tooling, and requirements ---
+references:
+  - >-
+    Rundgren, A., Jordan, B., and Erdtman, S. (2020). JSON Canonicalization
+    Scheme (JCS). IETF RFC 8785. https://www.rfc-editor.org/rfc/rfc8785
+  - >-
+    Srinivasan, E. (2026). Replication bundle for a cross-emitter
+    canonicalization divergence study. Zenodo.
+    https://doi.org/10.5281/zenodo.22407941
+
+implementation_resources:
+  - >-
+    Differential harness (10 SDKs, 40 tests):
+    https://github.com/elang2/mcp-audit-gateway/blob/main/test/vectors/cross-sdk-diff.sh
+  - >-
+    Byte-level divergence table:
+    https://github.com/elang2/mcp-audit-gateway/blob/main/test/vectors/SDK-AUDIT.md
+
+related_metrics:
+  - Canonical-form byte-equivalence rate (post-canonicalisation)
+
+usage_rights: MIT
