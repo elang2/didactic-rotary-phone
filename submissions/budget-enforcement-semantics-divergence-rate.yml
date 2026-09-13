@@ -45,7 +45,6 @@ ai_rmf_characteristics:
   - Valid & Reliable
 
 primary_tevv_application:
-  - Language Model Benchmark Evaluation
   - Privacy & Security Evaluation
 
 ai_lifecycle_stages:
@@ -67,10 +66,15 @@ usage_details: |
   reported consumption values pairwise.
 
   Concrete application: an 11-framework differential harness (see
-  references) executed the same tool-calling workload under identical
-  budget constraints. Frameworks disagreed on what to count (tokens vs.
-  dollars vs. both), when to trigger enforcement, and how to account for
-  framework-external tool calls.
+  implementation resources) applied the same tool-calling workload under
+  identical budget constraints, so $K = 11$. Eight frameworks were
+  executed directly; Google ADK and Anthropic were assessed by source
+  inspection, and Swarm was executed at 0.1.0 though archived upstream.
+  Frameworks disagreed on what to count (tokens vs. dollars vs. both),
+  when to trigger enforcement, and how to account for framework-external
+  tool calls. Agno reports no enforcement of a declared budget at all,
+  which under this definition is itself a divergence rather than a missing
+  measurement.
 
 known_failure_modes: |
   Sensitive to workload construction: workloads that do not exercise the
@@ -90,6 +94,13 @@ known_failure_modes: |
   frameworks don't report the same accounting"; separating them via the two
   strata clarifies which failure mode a measurement is exposing.
 
+
+  A framework that enforces no declared budget diverges from every
+  enforcing framework on every workload, so including one saturates $D$ at
+  1.0 irrespective of how the remaining implementations behave. Report the
+  rate with non-enforcing frameworks excluded, alongside their count, and
+  state the composition of $K$ for any reported rate. In the reference
+  survey Agno is the non-enforcing case.
 modality:
   - text
   - structured data
@@ -103,10 +114,17 @@ references:
   - >-
     McKeeman, W. M. (1998). Differential Testing for Software. Digital
     Technical Journal, 10(1), 100-107.
+  - >-
+    Ye, G., Tang, Z., Tan, S. H., Huang, S., Fang, D., Sun, X., Bian, L.,
+    Wang, H., and Wang, Z. (2021). Automated conformance testing for
+    JavaScript engines via deep compiler fuzzing. Proceedings of the 42nd
+    ACM SIGPLAN International Conference on Programming Language Design
+    and Implementation (PLDI 2021), 435-450.
+    https://doi.org/10.1145/3453483.3454054
 
 implementation_resources:
   - >-
-    Differential harness across 11 frameworks (v0.5.0):
+    Differential harness (11 frameworks, 8 executed directly; v0.5.0):
     https://github.com/elang2/agent-budget-semantics
   - >-
     Companion software release (Zenodo):
@@ -115,5 +133,15 @@ implementation_resources:
 related_metrics:
   - Per-dimension divergence rate (tokens, spend, resource-events)
   - Cross-SDK Wire-Level Divergence Rate (sibling metric; measures the wire layer under the same K-way construction)
+  - >-
+    Agent Token Budget Utilization (per-run ratio against a single
+    framework's own cap; supplies the tokens dimension under a shared
+    budget policy)
+
+computational_requirements: >-
+  Low. Python 3.11+ with four runtime dependencies, plus one optional extra
+  per framework compared. A bundled Dockerfile is available. No GPU and no
+  LLM API keys are required; a deterministic mock LLM serves as ground
+  truth.
 
 usage_rights: MIT
