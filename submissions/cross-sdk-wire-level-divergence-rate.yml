@@ -59,6 +59,11 @@ usage_details: |
   rates: Wilson score at $\alpha = 0.05$; cluster-adjusted Wilson where test
   cases share a generator (input schema, tokenizer, or fuzz seed).
 
+  The rate has a security consequence because MCP defines no canonical
+  serialisation, so a signature over transmitted content covers the emitted
+  bytes; a record signed by one SDK fails verification under another unless
+  both canonicalise first.
+
 known_failure_modes: |
   Runner participation affects the rate in two ways that must be reported
   alongside it. An implementation whose runner fails to execute is dropped
