@@ -1,0 +1,237 @@
+name: Repository tests
+
+# Tests the repository's own code — the validator, its corpus, and the command this
+# repository tells submitters to run. Nothing here looks at anybody's submission; that
+# is .github/workflows/validate-submission.yml.
+#
+# ---------------------------------------------------------------------------------
+# WHY `pull_request` AND NOT `pull_request_target`
+#
+#   This is the exact inverse of validate-submission.yml, and the pairing is the whole
+#   security design:
+#
+#     validate-submission.yml  holds repository context, and never runs pull request code
+#     repository-tests.yml     runs pull request code, and holds no repository context
+#
+#   These jobs have to execute the pull request's copy of the validator and its tests —
+#   that is what testing a change to them means. `pull_request_target` would run that
+#   code with repository context, which is a takeover. `pull_request` runs it in the
+#   fork's own context: GitHub forces the token read-only for fork pull requests and
+#   makes no secret available to them, whatever this file asks for.
+#
+#   The cost is that a first-time contributor's run waits for a maintainer to click
+#   "Approve and run". That is the correct trade here and not the cost it would be on
+#   the other workflow: `paths-ignore` below means an ordinary submission never
+#   triggers this at all, so the only people who meet that click are the ones
+#   proposing changes to the code — and a stranger's code should not run unreviewed.
+#
+#   Do not make either job a required status check. `paths-ignore` means they are
+#   *skipped* on submission pull requests, and a required check that never reports
+#   leaves every submission unmergeable.
+# ---------------------------------------------------------------------------------
+
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      # A pull request that only adds a submission changes no code, so there is
+      # nothing here to test. One that touches anything else runs — including one that
+      # touches a submission *and* something else.
+      #
+      # Deliberately a denylist and not `paths: [validation/**]`. It errs toward
+      # running: code added somewhere new is covered from the day it lands, rather
+      # than silently falling outside an allowlist nobody remembered to update.
+      - "submissions/**"
+  push:
+    # Catches anything that reached main without passing through here — a merge using
+    # the ruleset bypass, or the skip-validation label.
+    branches: [main]
+  workflow_dispatch: # on demand, from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ==================================================================================
+  # Every hostile submission review has found, replayed.
+  # ==================================================================================
+  hostile-tests:
+    name: hostile-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # VERIFY THE PINS BEFORE MERGING — same pins as validate-submission.yml:
+      #   gh api repos/actions/checkout/commits/v5 --jq .sha
+      - name: Check out the pull request
+        # Checking out pull request content is safe *here* and nowhere else in this
+        # repository: see the header. Do not copy this step into a workflow that runs
+        # on pull_request_target.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          # No `cache:` here either — keep the two workflows saying the same thing.
+
+      - name: Install the test dependencies
+        # The same hash-pinned lock as validate-submission.yml, on purpose: one file to
+        # regenerate, and the tests run against the versions the real check uses.
+        # Generated from validation/pyproject.toml — the command is in its header.
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check \
+            --require-hashes --requirement validation/requirements.lock
+
+      - name: Run the hostile-input corpus
+        # `shell: bash` rather than the default, for `pipefail`: the default is
+        # `bash -e`, where a failing hostile.py piped into tee exits 0 with tee's
+        # status and the whole suite reports green.
+        shell: bash
+        run: |
+          python3 validation/tests/hostile.py | tee "$RUNNER_TEMP/hostile.log"
+
+          # hostile.py exits 0 when an optional tool is missing, printing SKIP — a
+          # missing tool is nobody's regression. In CI it is: every tool it needs is
+          # in the lock file, so a SKIP here means a guard stopped running and the
+          # suite went green without it. That is the exact failure this corpus exists
+          # to prevent, so CI is stricter than the local run.
+          if grep -q '^  SKIP' "$RUNNER_TEMP/hostile.log"; then
+            echo "::error file=validation/tests/hostile.py::A guard did not run --" \
+                 "see the SKIP lines above. Every tool the suite needs belongs in" \
+                 "validation/requirements.lock."
+            exit 1
+          fi
+
+  # ==================================================================================
+  # Does the command we tell submitters to run still work, on the machines they have?
+  # ==================================================================================
+  validator-smoke-test:
+    # The corpus above answers "does the validator reject what it should?". This
+    # answers a question no amount of hostile input reaches: "does it run at all?"
+    #
+    # It runs the command exactly as validation/README.md prints it, on a submission
+    # that is entirely valid, and asks only that it finish. Two ways that breaks
+    # without any test noticing:
+    #
+    #   * the PEP 723 dependency block at the top of the script goes stale, so
+    #     `uv run` — the no-setup path the README leads with — cannot resolve;
+    #   * the report is written to a console that cannot encode it. Python on Windows
+    #     encodes stdout with the ANSI code page rather than UTF-8 whenever its output
+    #     is redirected, which is what CI, a pipe and a file all do. The report is full
+    #     of characters cp1252 has no room for, so a submitter whose submission was
+    #     perfectly fine gets a traceback instead of "Passed".
+    name: validator-smoke-test (${{ matrix.os }}, ${{ matrix.encoding }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      # Report every cell. Without this the first failure cancels the rest, and the
+      # log cannot say whether the problem is the platform or the encoding.
+      fail-fast: false
+      matrix:
+        # Two dimensions: the platform, and whether the console can represent the
+        # report. The second one is not a cartesian product with the first, because
+        # "the encoding you get when it is not UTF-8" is a different answer on each
+        # platform, and testing a plausible one is the whole point.
+        #
+        #   ascii   models the C/POSIX locale: a container with no locale set, a cron
+        #           job, an ssh session that forwarded nothing. Much the most common
+        #           way a Linux machine ends up not on UTF-8, and the strictest of the
+        #           three — it is the only one here that also rejects the em dashes the
+        #           reports are written with.
+        #   cp1252  what Python actually uses on a Western-locale Windows machine when
+        #           its output is redirected, which is what a pipe, a file and a CI log
+        #           all are. It encodes the em dash but not the status glyphs.
+        #
+        # Not latin-1, the other candidate: it fails on the same glyphs, so it catches
+        # nothing ascii does not, and it is far rarer as a console encoding.
+        include:
+          - { os: ubuntu-latest, encoding: utf-8 }
+          - { os: ubuntu-latest, encoding: ascii }
+          - { os: windows-latest, encoding: utf-8 }
+          - { os: windows-latest, encoding: cp1252 }
+    defaults:
+      run:
+        # One script for both platforms. Windows runners have git-bash; the default
+        # there would be PowerShell, and every step below would need a second spelling.
+        shell: bash
+
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv and the schema checker
+        # uv comes from the same hash-pinned lock as everything else, rather than from
+        # `astral-sh/setup-uv` (a third-party action) or a piped install script.
+        #
+        # Note what is deliberately *not* pinned after this: `uv run` resolves the
+        # script's own PEP 723 dependencies from PyPI, unpinned — because that is
+        # precisely what a submitter's machine does, and it is what this job exists to
+        # test. Safe here and nowhere else: this workflow already runs pull request
+        # code and holds nothing worth stealing.
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check \
+            --require-hashes --requirement validation/requirements.lock
+
+      - name: Put the examples where the validator will look for them
+        # `inspect --files` only accepts paths under `submissions/`; that rule is what
+        # stops a mistyped path reporting "nothing to validate" and passing. The
+        # examples live in validation/tests/examples/ because anything committed under
+        # `submissions/` counts as a real submission and appears on the landing page.
+        # The runner is thrown away, so these copies never outlive the job.
+        run: cp validation/tests/examples/*.yml submissions/
+
+      - name: Run the documented command on each example
+        # Character for character what validation/README.md tells submitters to run.
+        # If this loop and that file ever disagree, the README is what is wrong.
+        #
+        # One file per invocation, not all of them at once: a submission pull request
+        # may contain exactly one file, so passing several makes the validator report
+        # that as the error it is. Looping is not a workaround for that rule — it is
+        # how you exercise each example under it.
+        env:
+          # Set explicitly rather than left to the platform, so each cell states the
+          # console it is standing in for and two of them cannot quietly become the
+          # same test. Scoped to this step: the schema check below is not what is
+          # under examination here.
+          PYTHONIOENCODING: ${{ matrix.encoding }}
+        run: |
+          # Every example is run even after one fails, and the failures are reported
+          # together at the end. Stopping at the first would mean finding out about
+          # the next one only after a fix-and-push cycle, four times over — once per
+          # cell of the matrix.
+          failed=""
+          for example in validation/tests/examples/*.yml; do
+            name=$(basename "$example")
+            echo "::group::$name"
+            uv run validation/validate_submission.py inspect --files "submissions/$name" \
+              || failed="$failed $name"
+            echo "::endgroup::"
+          done
+
+          if [ -n "$failed" ]; then
+            echo "::error::These examples did not validate:$failed"
+            exit 1
+          fi
+
+      - name: Check each example against the schema
+        # Keeps the examples honest. Two of them are byte-identical copies of the
+        # worked examples, which live as open pull requests where no workflow can read
+        # them — so this is the only place a drift between SUBMISSION_FORMAT.md and
+        # schemas/v1.json actually surfaces. See validation/tests/examples/README.md.
+        run: |
+          check-jsonschema --schemafile validation/schemas/v1.json \
+            validation/tests/examples/*.yml
