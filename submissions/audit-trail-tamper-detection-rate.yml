@@ -62,6 +62,9 @@ usage_details: |
   axes are detection rate, false-positive rate, per-event verifier
   latency, and per-event storage.
 
+  Reported per system under test, so the same attack classes can be
+  compared across independent audit-trail architectures.
+
 known_failure_modes: |
   Detection rate against an incomplete attack corpus overestimates
   real-world resilience. Attack corpora should include
@@ -82,13 +85,16 @@ references:
   - >-
     Bindschaedler, L., Botha, Q., and Siebenbrunner, C. (2026). Agent
     Flight Recorder: Tamper-Evident Audit Trails with On-Chain Anchoring
-    for Long-Horizon Tool-Using Agents.
-    https://binds.ch/papers/flightrecorder2026.pdf
+    for Long-Horizon Tool-Using Agents. To appear in the IEEE
+    International Conference on Blockchain Computing and Applications
+    (BCCA 2026). arXiv:2609.01931.
+    https://doi.org/10.48550/arXiv.2609.01931
   - >-
-    Vijayakumar, V., et al. (2026). TRACE: Tamper-Resistant Accountability
-    and Cryptographic Evidence for Multi-Agent AI Systems. IEEE
-    BigDataSecurity 2026.
-    https://ieeexplore.ieee.org/abstract/document/11638142/
+    Vijayakumar, B., Varadaraju, S. K., and Baskaran, L. B. (2026). TRACE:
+    Tamper-Resistant Accountability and Cryptographic Evidence for
+    Multi-Agent AI Systems. 2026 IEEE 12th Conference on Big Data Security
+    on Cloud (BigDataSecurity), 90-95.
+    https://doi.org/10.1109/bigdatasecurity69476.2026.00021
   - >-
     Srinivasan, E. (2026). Tamper-Evident Audit Trails for AI Agent Tool
     Invocations: Design Pitfalls, Cross-Language Conformance, and a
@@ -97,11 +103,29 @@ references:
 
 implementation_resources:
   - >-
-    mcp-audit-gateway (Ed25519 gateway + HMAC-SHA256 wrap modes):
-    https://github.com/elang2/mcp-audit-gateway
+    Independent replication resource, the Agent Flight Recorder evaluation
+    artifact, which injects the same four attack classes and reports
+    per-class detection rates across five configurations (eval/tamper.py,
+    eval/bench_rq3.py, artifacts/paper/reference/rq3.json), MIT licensed
+    and pinned at commit 28ddcde:
+    https://github.com/mpi-dsg/agent-flight-recorder/tree/28ddcde9c133bd10e9a500cc7e38e3d70d8baa86
   - >-
-    Cross-language conformance vectors (JS + Python parity, 46 cases):
-    https://github.com/elang2/mcp-audit-gateway/tree/main/test/vectors
+    mcp-audit-gateway (Ed25519 and HMAC-SHA256 signing, hash-chain and
+    checkpoint verification), pinned at v0.8.1:
+    https://github.com/elang2/mcp-audit-gateway/tree/v0.8.1
+    Released software (11 releases; v0.8.1; @mcp-audit-gateway/core, 0.8.0
+    on npm). The repository was created 2026-08-17 and is not yet widely
+    adopted, so it is cited as a reproduction path rather than as an
+    established tool. It supplies the audit-trail primitives the metric is
+    applied to; the four-class detection measurement itself is demonstrated
+    by the Agent Flight Recorder artifact above.
+  - >-
+    Cross-language conformance vectors (JS + Python parity, 46 cases),
+    pinned at v0.8.1:
+    https://github.com/elang2/mcp-audit-gateway/blob/v0.8.1/test/vectors/checkpoint.json
+    Exercised by the paired verifiers verify-checkpoint.mjs and
+    verify-checkpoint.py in the same directory, which each report 46 of 46
+    checks passing.
 
 related_metrics:
   - Verifier per-event latency
