@@ -1,4 +1,4 @@
-# Submitting a metric
+# Submission guide
 
 This repository accepts **metrics and measurement methodologies** for AI test,
 evaluation, verification, and validation (TEVV), proposed for inclusion in the
@@ -31,6 +31,19 @@ pull requests — see the
 
 ## What to expect after submitting
 
+- **An automated check runs first.** It runs on a schedule rather than the moment you
+  push, so expect a result within an hour of opening your pull request, and again
+  within an hour of each change you push; the check itself takes under a minute. It
+  confirms the mechanical things — that the pull request adds a single YAML file under
+  `submissions/`, that the file parses, and that it matches the submission format. If
+  something is off, the check fails and says exactly what to change; correct it and
+  push, and the check runs again. Reviewers turn their attention to pull requests once
+  this check is green. You can run the same checks yourself before submitting — see
+  [validation/README.md](validation/README.md).
+- **Review typically starts within about two weeks** of your pull request being opened.
+  That is when you can expect first contact from a reviewer, not when review concludes —
+  discussion may continue for a while after. If two weeks pass with no response, you are
+  welcome to leave a comment on your pull request as a reminder.
 - **Review happens on the pull request.** Reviewers may ask questions or request
   changes as PR comments. You'll be notified by email — make sure GitHub email
   notifications are enabled on your account.
@@ -38,7 +51,7 @@ pull requests — see the
   automatically.
 - Reviewers may loop in additional subject-matter experts for input.
 - The submission format is versioned and may evolve. Your submission is reviewed
-  against the `format_version` your file declares — see
+  against the `schema_version` your file declares — see
   [SUBMISSION_FORMAT.md](SUBMISSION_FORMAT.md) for the compatibility rules.
 - **Acceptance = merge.** When review concludes positively, a maintainer approves and
   merges the pull request. Merged submissions are considered for publication on the
