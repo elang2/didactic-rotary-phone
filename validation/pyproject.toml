@@ -1,0 +1,51 @@
+# Not a package, and nothing imports it. `validation/` is a directory of standalone
+# scripts, each carrying its own PEP 723 dependency block so it can be run with
+# `uv run` and no setup at all.
+#
+# This file exists for one reason: to be the single input from which the lock file
+# beside it is generated, so CI installs exact, hash-verified versions rather than
+# re-resolving ranges from PyPI on every run.
+#
+# Regenerate the lock after any change here, and commit both in the same pull request:
+#
+#     uv pip compile --generate-hashes --universal --python-version 3.12 \
+#         validation/pyproject.toml --group validation/pyproject.toml:test \
+#         -o validation/requirements.lock
+#
+# The path is repeated because `--group` resolves its own pyproject.toml relative to
+# the working directory, not to the file named before it. Without uv, `pip install
+# pip-tools` and the equivalent `pip-compile` invocation produces the same thing.
+#
+# A lock that has drifted from this file fails the install step, which paints a red
+# check on whichever submission happens to be open — for a reason that is ours and not
+# the submitter's. Treat regenerating it as part of the same change, not a follow-up.
+
+[project]
+name = "ai-metrology-validation"
+version = "0"
+requires-python = ">=3.10"
+
+# What the check itself needs: the pre-flight read in validate_submission.py (schema
+# version, alias refusal), and the schema step it hands off to.
+dependencies = [
+    "PyYAML~=6.0",
+    "check-jsonschema~=0.38",
+]
+
+[dependency-groups]
+# What the repository's own tests need, on top of the above. Both workflows install the
+# whole lock, so this grouping records intent rather than enforcing a split; keeping one
+# lock file means there is only one thing to regenerate and so only one thing to forget.
+#
+#   ruff  pyflakes over validation/, via `ruff check --select F`, inside hostile.py.
+#         It catches an undefined name in a branch no test takes — the class of bug
+#         that passed every test and crashed on the first real run. hostile.py's own
+#         PEP 723 block does not declare it, so without this entry CI would print SKIP
+#         for that guard and still report a pass.
+#   uv    runs the scripts the way validation/README.md tells submitters to run them,
+#         straight from their PEP 723 headers. Installed from the lock rather than
+#         from a third-party action or a piped install script.
+test = [
+    "ruff~=0.16",
+    "uv~=0.9",
+]

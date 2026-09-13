@@ -1,0 +1,20 @@
+# The other files here are real worked examples and carry nearly every optional field.
+# This one is the opposite case: the seven required fields and nothing else, so the
+# "every optional key absent" path through the validator and the schema is exercised
+# too. A rule that accidentally made an optional field required would pass against the
+# other two and fail here.
+#
+# Not a submission. See README.md in this directory.
+
+schema_version: "1.0"
+name: Minimal Metric
+applied_definition: >-
+  A placeholder definition, long enough to look like a real one, for a submission that
+  fills in nothing beyond what the format requires.
+submitter_organizations:
+  - Example Organization
+contact_email: example@example.org
+references:
+  - Example Author et al., "An Example Reference", 2026.
+implementation_resources:
+  - https://example.org/minimal-metric

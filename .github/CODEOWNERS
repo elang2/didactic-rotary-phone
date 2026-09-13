@@ -2,4 +2,13 @@
 # who are notified by email when a submission is opened. Each login must be a
 # collaborator with write access or higher, or GitHub silently ignores the entry.
 # Add maintainers to the line below (space-separated) as they are onboarded.
-*  @marionlb
+
+# default owners for everything in the repo, unless a later match takes precedence,
+*               @marionlb
+
+# default owners for submissions
+/submissions/   @amironesei-dot @jphall663
+
+# protecting the validation folder and the .github folder, which contains the CODEOWNERS file itself
+/validation/    @marionlb
+/.github/       @marionlb

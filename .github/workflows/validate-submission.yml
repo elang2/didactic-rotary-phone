@@ -1,0 +1,269 @@
+name: Submission validation
+
+# Reports whether a submission is mechanically sound, so reviewers only spend attention
+# on pull requests that already parse, follow the schema, and touch nothing but their
+# own file.
+#
+# ---------------------------------------------------------------------------------
+# WHY `pull_request_target` AND NOT `pull_request`
+#
+#   Public repositories require a maintainer to click "Approve and run" before a fork's
+#   workflow runs, for anyone who has not had a pull request merged before. In an
+#   intake repository essentially every submitter is that person, so `pull_request`
+#   would put a manual click in front of every single submission — the opposite of the
+#   point. `pull_request_target` runs the workflow *as defined on the base branch*,
+#   immediately and without approval, and cannot be altered by the pull request.
+#
+#   The price is that this job holds repository context, so it must never execute
+#   anything that came from the pull request. It does not:
+#
+#     * the only checkout is the base branch — there is no `ref:` anywhere in this
+#       file, and adding one that points at the pull request is a repository takeover,
+#       not a defect;
+#     * the submission is read as bytes with `git show` and written to the runner's
+#       scratch directory, never into the repository and never onto a code path;
+#     * the pull request title, body and labels reach the validator through `env:`,
+#       never through a `${{ }}` interpolation inside a `run:` block;
+#     * `permissions:` below is read-only, no secrets are referenced, and no cache is
+#       enabled — a cache written from here would be scoped to `main` and restorable
+#       by later privileged runs.
+#
+#   Keep every one of those when editing this file.
+#
+# Because the base-branch copy is what runs, a pull request cannot test its own changes
+# to this workflow — they take effect only once merged. Test the steps locally instead;
+# see validation/README.md:
+#
+#   python3 validation/validate_submission.py inspect --files submissions/<name>.yml
+#   check-jsonschema --schemafile validation/schemas/v1.json submissions/<name>.yml
+#
+# Changes to `validation/` are covered by .github/workflows/repository-tests.yml, which
+# runs the test corpus against the pull request's own copy — safely, because that
+# workflow holds no repository context.
+#
+# ---------------------------------------------------------------------------------
+# THE MANUAL TRIGGER
+#
+#   `workflow_dispatch` re-runs these checks against any open pull request, on demand,
+#   for a maintainer who wants to see what the validator makes of it. Only write access
+#   can dispatch a workflow, so this is not a lever a submitter can pull.
+#
+#   Two things it is NOT:
+#
+#     * It does not update the pull request's check. GitHub attaches a dispatched run
+#       to the ref it was dispatched from, not to the pull request's head commit, so a
+#       required check stays exactly as it was. To genuinely re-run the check a pull
+#       request is gated on, use "Re-run all jobs" on the original run.
+#     * It does not read the pull request description, so the checklist is not
+#       inspected on a manual run. A dispatched run has no description to read, and
+#       reporting one as missing would be a finding the run invented.
+#
+#   Like every `workflow_dispatch`, the button only appears once this file is on the
+#   default branch.
+# ---------------------------------------------------------------------------------
+
+# ZIZMOR SUPPRESSION (on the `on:` line below)
+#
+#   Acknowledged, not overlooked. zizmor is right that `pull_request_target` is almost
+#   always used insecurely; the reasons this is one of the exceptions are set out at
+#   the top of this file and are checkable in a diff: no `ref:` input, no write
+#   permission, no secrets, no cache, no `${{ }}` inside any `run:` body, and nothing
+#   from the pull request on a code path. Remove any one of those and this suppression
+#   stops being honest — delete it and read the finding again.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+    # Pins the trusted copy to `main`. Without this the workflow would also run for
+    # pull requests targeting other branches, from those branches' definitions.
+    branches: [main]
+    types:
+      - opened
+      - reopened
+      - synchronize # new commits pushed to the pull request
+      - edited # the description changed, which the checklist check reads
+      - labeled # a maintainer may have applied skip-validation
+      - unlabeled
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Number of the open pull request to check"
+        required: true
+        type: string
+
+# The single strongest line in this file for a security reviewer: no write scope
+# anywhere, and nothing below references a secret. The manual trigger adds no scope —
+# it reads the pull request the same way, as objects fetched from a public ref.
+permissions:
+  contents: read
+
+concurrency:
+  group: submission-validation-${{ github.event.pull_request.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    # This name is the status-check context a ruleset refers to. Changing it silently
+    # detaches any "required status check" rule pointing at the old name.
+    name: validate-submission
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      # Resolved once, here, so every step below reads the same value whichever event
+      # started the run. On a pull request the payload wins; on a manual run the only
+      # thing available is what the maintainer typed.
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+      # `base.sha` is the commit the pull request forked from. A manual run has no
+      # payload to take it from, so it compares against the tip of whatever ref it was
+      # dispatched from — normally main, which is the same merge base and so the same
+      # diff.
+      BASE_SHA: ${{ github.event.pull_request.base.sha || 'HEAD' }}
+      # STAGE_DIR is NOT here. The `runner` context is not available in a job-level
+      # `env:` block — only inside steps — and a workflow that reaches for it there is
+      # rejected before any job starts, so the check does not fail, it ceases to exist.
+      # It is set on each step that needs it instead.
+
+    steps:
+      # VERIFY THE PINS BEFORE MERGING. Actions are pinned to full commit SHAs and
+      # only GitHub-owned actions are used. To re-resolve a tag to its commit:
+      #   gh api repos/actions/checkout/commits/v5 --jq .sha
+      - name: Check out the base branch — the trusted copy of the validator
+        # No `ref:` — on pull_request_target this checks out the base branch. Adding
+        # `ref: ${{ github.event.pull_request.head.sha }}` here is the single change
+        # that would turn this job into remote code execution for any stranger.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the diff below needs the merge base
+          persist-credentials: false
+
+      - name: Fetch the pull request as data — objects only, never a checkout
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # PR_NUMBER goes straight into a ref path, and on a manual run it is whatever
+          # somebody typed into a text box. Match it against a strict pattern before it
+          # reaches a command rather than escaping it afterwards.
+          case "$PR_NUMBER" in
+            '' | *[!0-9]*)
+              echo "::error::Pull request number must be digits only; got '$PR_NUMBER'."
+              exit 1
+              ;;
+          esac
+
+          # Authenticated so this cannot fail on an anonymous rate limit and paint a
+          # red check on somebody's submission for a reason that is ours. The header
+          # is set in the local config rather than on the command line — an argument
+          # would be visible in the process list — and removed again immediately, so
+          # the credential is gone before any step touches submitter-controlled data.
+          git config --local "http.https://github.com/.extraheader" \
+            "AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git fetch --no-tags origin \
+            "+refs/pull/${PR_NUMBER}/head:refs/remotes/origin/pr-head"
+          git config --local --unset-all "http.https://github.com/.extraheader"
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          # No `cache:` — deliberately. A cache written by a pull_request_target job
+          # is scoped to `main` and would be restored by later privileged runs.
+
+      - name: Install the validator's dependencies
+        # This step is the boundary: everything up to and including it is our
+        # infrastructure, everything after it is the submitter's file. The last step
+        # in the job reads this `id` to tell the two apart.
+        id: setup
+        # `--require-hashes` means every package, including transitive ones, must
+        # match a hash recorded in the lock file. A replaced artefact on PyPI cannot
+        # enter this job silently. The lock is generated from
+        # validation/pyproject.toml; that file's header carries the command.
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check \
+            --require-hashes --requirement validation/requirements.lock
+
+      # ------------------------------------------------------------------------
+      # Three steps, deliberately. The middle one is the schema check, run as the
+      # plain command a submitter can run themselves — so when it fails, the log
+      # shows exactly what failed and exactly how to reproduce it.
+      # ------------------------------------------------------------------------
+
+      - name: Check what the pull request changes
+        id: inspect
+        env:
+          # Passing these through the environment, rather than into the `run` script,
+          # is what stops a crafted title or description from becoming shell commands.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          STAGE_DIR: ${{ runner.temp }}/submission
+        run: |
+          # A manual run has no description to read, and the expression above
+          # substitutes an empty string rather than nothing at all — which the
+          # validator reads as a real but empty description, and reports as a missing
+          # checklist. That finding would be invented by the run, against a submission
+          # that is fine. Unsetting the variable is what makes the check skip instead.
+          # PR_LABELS needs no such handling: the validator already reads an absent or
+          # null value as no labels.
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            unset PR_BODY
+            echo "Manual run: the pull request description was not checked."
+          fi
+
+          python3 validation/validate_submission.py inspect \
+            --base "$BASE_SHA" \
+            --head refs/remotes/origin/pr-head \
+            --stage-dir "$STAGE_DIR"
+
+      - name: Validate the submission against the schema
+        if: steps.inspect.outputs.validate == 'true'
+        env:
+          SCHEMA: ${{ steps.inspect.outputs.schema }}
+          SCHEMA_DISPLAY: ${{ steps.inspect.outputs.schema_display }}
+          FILE: ${{ steps.inspect.outputs.file }}
+        # The staging directory, where the submission sits under the same relative path
+        # it has in the repository. check-jsonschema then reports
+        # `submissions/my-metric.yml`, matching the command printed below exactly.
+        # Written out rather than taken from a step output so that every path in this
+        # file is one the workflow chose, not one derived from the pull request.
+        working-directory: ${{ runner.temp }}/submission
+        run: |
+          echo "To reproduce this locally, from a clone of your fork:"
+          echo
+          echo "    pip install check-jsonschema"
+          echo "    check-jsonschema --schemafile $SCHEMA_DISPLAY $FILE"
+          echo
+          # A machine-readable copy for the reporting step. The run below is the one
+          # that decides pass or fail, so a failure here is not the signal.
+          check-jsonschema --schemafile "$SCHEMA" "$FILE" \
+            --output-format json > schema-errors.json || true
+          check-jsonschema --schemafile "$SCHEMA" "$FILE"
+
+      - name: Explain any schema errors
+        if: failure() && steps.inspect.outputs.validate == 'true'
+        env:
+          STAGE_DIR: ${{ runner.temp }}/submission
+        run: |
+          python3 validation/validate_submission.py explain \
+            "$STAGE_DIR/schema-errors.json" --stage-dir "$STAGE_DIR"
+
+      - name: Say plainly when the failure is ours, not the submitter's
+        # Reached only when something failed before the validator ever looked at the
+        # submission — a missing lock file, a runner problem, a bad pin, a pull request
+        # number that is not a number. A red check reading "your submission is invalid"
+        # when the fault is ours is both wrong and lands on somebody's first
+        # contribution.
+        # `steps.setup.conclusion` is 'success' only if the install ran and passed.
+        # It is 'failure' if the install itself broke, and the empty string if the job
+        # died before reaching it — a bad checkout, a bad pin, a pull request number
+        # that is not a number. All three mean the fault is ours. Reading a step's
+        # conclusion rather than a marker written to $GITHUB_ENV keeps this workflow
+        # free of any write to the job environment, which is worth more here than the
+        # one line it saves: this is the job that holds repository context.
+        if: failure() && steps.setup.conclusion != 'success'
+        run: |
+          {
+            echo "### ⚠️ This check could not run"
+            echo
+            echo "It failed while setting itself up, **before** reading the submission."
+            echo "Nothing here is a finding about this pull request. A maintainer needs"
+            echo "to look at the job log — please leave a comment rather than changing"
+            echo "your file."
+          } >> "$GITHUB_STEP_SUMMARY"
